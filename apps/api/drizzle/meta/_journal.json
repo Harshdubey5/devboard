@@ -8,6 +8,13 @@
       "when": 1791778092800,
       "tag": "0000_fearless_kabuki",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792048512034,
+      "tag": "0001_low_dust",
+      "breakpoints": true
     }
   ]
 }

@@ -212,13 +212,14 @@
 // process.on("SIGTERM", shutdown);
 
 
+
 import app from "./app.js";
 import { pool } from "./db/index.js";
 
-const PORT = 4000;
+const PORT = Number(process.env.PORT) || 4000;
 
-const server = app.listen(PORT, () => {
-  console.log(`DevBoard API running on http://localhost:${PORT}`);
+const server = app.listen(PORT, "0.0.0.0", () => {
+  console.log(`DevBoard API listening on port ${PORT}`);
 });
 
 function shutdown() {

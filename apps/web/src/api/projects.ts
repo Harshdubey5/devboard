@@ -1,7 +1,8 @@
 
 import type { Project } from "../types";
 
-const API_BASE_URL = "http://localhost:4000";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
 
 async function request<T>(
@@ -12,7 +13,10 @@ async function request<T>(
 
   // 1. Handle network-level failures.
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, options);
+    response = await fetch(`${API_BASE_URL}${path}`, {
+     ...options,
+     credentials: "include",
+    });
   } catch {
     throw new Error(
       "Unable to reach the DevBoard API. Check that the backend is running.",
