@@ -5,6 +5,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import argon2 from "argon2";
 import { and, eq } from "drizzle-orm";
+import { rateLimit } from "express-rate-limit";
 import { db, pool } from "./db/index.js";
 import { projects, users } from "./db/schema.js";
 
@@ -20,6 +21,19 @@ const sessionCookieOptions = {
   secure: process.env.NODE_ENV === "production",
   path: "/",
 };
+
+export const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  skip: () =>
+    process.env.NODE_ENV === "test" &&
+    process.env.TEST_RATE_LIMIT !== "true",
+  message: {
+    error: "Too many login attempts. Please try again later.",
+  },
+});
 
 if (!sessionSecret || sessionSecret.length < 32) {
   throw new Error("SESSION_SECRET must contain at least 32 characters.");
@@ -148,7 +162,7 @@ app.post("/api/auth/register", async (req, res, next) => {
 });
 
 // Log in with an existing account.
-app.post("/api/auth/login", async (req, res, next) => {
+app.post("/api/auth/login", loginLimiter, async (req, res, next) => {
   const email =
     typeof req.body?.email === "string"
       ? req.body.email.trim().toLowerCase()
@@ -230,7 +244,7 @@ app.post("/api/auth/logout", (req, res, next) => {
 
 // Create a project owned by the current user.
 app.post("/api/projects", requireAuth, async (req, res, next) => {
-  const { name, description, status } = req.body;
+  const { name, description, status } = req.body ?? {};
 
   if (
     typeof name !== "string" ||
@@ -277,7 +291,7 @@ app.patch("/api/projects/:id", requireAuth, async (req, res, next) => {
     return res.status(400).json({ error: "Invalid project ID." });
   }
 
-  const { name, description, status } = req.body;
+  const { name, description, status } = req.body ?? {};
   const updates: {
     name?: string;
     description?: string;

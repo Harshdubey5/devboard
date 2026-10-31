@@ -1,6 +1,5 @@
 
 import "./test-safety.js";
-
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { like } from "drizzle-orm";
@@ -61,6 +60,37 @@ describe("DevBoard API", () => {
     });
   });
 
+  it("rate limits repeated login attempts", async () => {
+    process.env.TEST_RATE_LIMIT = "true";
+
+    try {
+      const responses = await Promise.all(
+        Array.from({ length: 11 }, () =>
+          request(app)
+            .post("/api/auth/login")
+            .set("Origin", trustedOrigin)
+            .send({
+              email: emailA,
+              password: "WrongPassword!123",
+            }),
+        ),
+      );
+
+      expect(responses.filter((response) => response.status === 401)).toHaveLength(10);
+      expect(responses.filter((response) => response.status === 429)).toHaveLength(1);
+
+      const limitedResponse = responses.find(
+        (response) => response.status === 429,
+      );
+
+      expect(limitedResponse?.body.error).toBe(
+        "Too many login attempts. Please try again later.",
+      );
+    } finally {
+      delete process.env.TEST_RATE_LIMIT;
+    }
+  });
+
   it("rejects project requests from anonymous users", async () => {
     const anonymous = request(app);
 
@@ -97,6 +127,13 @@ describe("DevBoard API", () => {
       .send({ email, password });
 
     expect(response.status).toBe(201);
+    const sessionCookie = response.headers["set-cookie"];
+
+    expect(sessionCookie).toBeDefined();
+    expect(String(sessionCookie)).toContain("devboard.sid=");
+    expect(String(sessionCookie)).toMatch(/HttpOnly/i);
+    expect(String(sessionCookie)).toMatch(/SameSite=Lax/i);
+    expect(String(sessionCookie)).toMatch(/Path=\//i);
     expect(response.body.user.email).toBe(email);
     expect(response.body.user.id).toBeTypeOf("number");
     expect(response.body.user.passwordHash).toBeUndefined();
@@ -122,6 +159,28 @@ describe("DevBoard API", () => {
       .send({ email: emailA, password: "WrongPassword!123" });
 
     expect(response.status).toBe(401);
+  });
+
+  it("logs in a user and establishes a session", async () => {
+    const agent = request.agent(app);
+
+    const loginResponse = await agent
+      .post("/api/auth/login")
+      .set("Origin", trustedOrigin)
+      .send({ email: emailA, password });
+
+    expect(loginResponse.status).toBe(200);
+    const sessionCookie = loginResponse.headers["set-cookie"];
+
+    expect(sessionCookie).toBeDefined();
+    expect(String(sessionCookie)).toContain("devboard.sid=");
+    expect(String(sessionCookie)).toMatch(/HttpOnly/i);
+    expect(String(sessionCookie)).toMatch(/SameSite=Lax/i);
+    expect(String(sessionCookie)).toMatch(/Path=\//i);
+    const meResponse = await agent.get("/api/auth/me");
+
+    expect(meResponse.status).toBe(200);
+    expect(meResponse.body.user.email).toBe(emailA);
   });
 
   it("rejects access to the current user endpoint when anonymous", async () => {
@@ -336,5 +395,27 @@ describe("DevBoard API", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.projects).toBeInstanceOf(Array);
+  });
+
+  it("rejects project creation when the request body is missing", async () => {
+    const response = await userA
+      .post("/api/projects")
+      .set("Origin", trustedOrigin);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe(
+      "Name and description are required.",
+    );
+  });
+
+  it("rejects project updates when the request body is missing", async () => {
+    const response = await userA
+      .patch("/api/projects/2147483647")
+      .set("Origin", trustedOrigin);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe(
+      "Provide at least one field to update.",
+    );
   });
 });
